@@ -29,8 +29,19 @@ class Eval_Node():
         if self.dist != None:
             return self.dist
         
-        dist = 10.0
-        # TODO
+        if self.board == self.target:
+            print("yay")
+            return 0.0
+
+        dist = 0.0
+        for file in range(8):
+            for rank in range(8):
+                square = chess.square(file, rank)
+                piece = self.board.piece_at(square)
+                target_piece = self.target.piece_at(square)
+                if piece != target_piece:
+                    dist += 4.0
+
         self.dist = dist
         return dist
     
@@ -54,10 +65,13 @@ class Eval_Node():
         Helper function for updating distance evaluation based on child nodes
         '''
         
+        if self.dist == 0.0:
+            return # position already found
+
         min_dist:float = float("inf")
         for child in self.children:
             current_dist = child.dist_eval()
             if current_dist < min_dist:
                 min_dist = current_dist
         
-        self.dist = min_dist
+        self.dist = min_dist + 1.0

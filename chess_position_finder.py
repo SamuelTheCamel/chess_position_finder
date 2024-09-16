@@ -32,8 +32,13 @@ class Eval_Node():
         
         if self.board == self.target:
             return 0.0
-        
-        dist = 0.0
+
+        if self.board.outcome() != None or self.board.can_claim_threefold_repetition():
+            if self.target.outcome() == None and not self.target.can_claim_threefold_repetition():
+                return float("inf")
+
+        dist:float = 0.0
+
         piece_freq:dict[str,list[chess.Square]] = {"P":[], "p":[], "N":[], "n":[], "B":[], "b":[], 
                                                    "R":[], "r":[], "Q":[], "q":[], "K":[], "k":[]}
         piece_freq_target:dict[str,list[chess.Square]] = {"P":[], "p":[], "N":[], "n":[], "B":[], "b":[], 
@@ -71,23 +76,30 @@ class Eval_Node():
                     for t_square in target_squares:
                         curr_dist:float
                         if piece_type.lower() == "k":
-                            curr_dist = chess.square_distance(o_square, t_square) * 2.0
+                            curr_dist = chess.square_distance(o_square, t_square) * 1.5
                         elif piece_type.lower() == "q":
-                            curr_dist = chess.square_distance(o_square, t_square) * 0.5
+                            curr_dist = chess.square_distance(o_square, t_square) * 0.3
                         elif piece_type.lower() == "r":
-                            curr_dist = chess.square_manhattan_distance(o_square, t_square) * 0.7
+                            curr_dist = chess.square_manhattan_distance(o_square, t_square) * 0.5
                         elif piece_type.lower() == "b":
                             o_card = (chess.square_file(o_square) + chess.square_rank(o_square)) % 2
                             t_card = (chess.square_file(t_square) + chess.square_rank(t_square)) % 2
                             if o_card == t_card:
-                                curr_dist = chess.square_distance(o_square, t_square) * 1.0
+                                curr_dist = chess.square_distance(o_square, t_square) * 0.7
                             else:
                                 curr_dist = float("inf")
                         elif piece_type.lower() == "n":
                             curr_dist = chess.square_knight_distance(o_square, t_square) * 1.5
-                        elif piece_type.lower() == "p":
+                        elif piece_type == "P":
                             file_dist = chess.square_file(t_square) - chess.square_file(o_square)
                             rank_dist = chess.square_rank(t_square) - chess.square_rank(o_square)
+                            if rank_dist < 0:
+                                curr_dist = float("inf")
+                            else:
+                                curr_dist = rank_dist * 1.2 + abs(file_dist) * 10.0
+                        elif piece_type == "p":
+                            file_dist = chess.square_file(o_square) - chess.square_file(t_square)
+                            rank_dist = chess.square_rank(o_square) - chess.square_rank(t_square)
                             if rank_dist < 0:
                                 curr_dist = float("inf")
                             else:
@@ -104,6 +116,9 @@ class Eval_Node():
         
         if dist < 1 and self.board.turn != self.target.turn:
             dist = 1.0
+
+        if dist < 0:
+            raise RuntimeError("negative distance value detected")
 
         self.dist = dist
         return dist
@@ -146,7 +161,7 @@ class Eval_Node():
         return f"Eval_Node:\ndist eval: {self.dist}\ndepth: {self.depth}\n" + str(self.board)
 
 
-def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=25, max_iter=1000, print_status=False) -> tuple[bool,list[chess.Move]]:
+def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=20, max_iter=500, print_status=False) -> tuple[bool,list[chess.Move]]:
     '''
     Finds the target board from the start board.
     Set print_status to True to see status messages.
@@ -168,12 +183,12 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=25, ma
     iter = 0
 
     while len(leaves) > 0:
-        # sort leaves based on their eval distances
-        leaves.sort(key = lambda x : x.dist_eval())
+        # sort leaves based on their eval distancesS
+        leaves.sort(key = lambda x : x.dist_eval() + x.depth*0.1)
         # evaluate closest leaf to target
         current_node = leaves[0]
         # check if target is found or max_depth is reached
-        if current_node.board == target:
+        if current_node.dist_eval() == 0:
             print("TARGET FOUND")
             return True, current_node.board.move_stack
         if current_node.depth == max_depth:

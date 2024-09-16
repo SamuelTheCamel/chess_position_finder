@@ -126,7 +126,6 @@ class Eval_Node():
     def gen_children(self):
         '''
         Generates all child nodes of this node (positions after next move)
-        Also updates self.dist
         '''
         move_list = self.board.legal_moves
         for move in move_list:
@@ -136,7 +135,7 @@ class Eval_Node():
             # create new node with new board
             self.children.add(Eval_Node(new_board, self.target, self.depth + 1))
         
-        self._update_dist()
+        #self._update_dist()
     
     def _update_dist(self):
         '''
@@ -153,9 +152,15 @@ class Eval_Node():
                 min_dist = current_dist
         
         self.dist = min_dist + 1.0
+    
+    def precedence(self):
+        '''
+        Calculates the precedence of this node. Nodes with the lowest precedence will be evaluated first in minimax.
+        '''
+        return self.dist_eval() + self.depth * 0.1
 
     def __repr__(self):
-        return f"Eval_Node: dist eval: {self.dist}; depth: {self.depth}; board: {self.board}"
+        return f"Eval_Node: dist eval: {self.dist}; depth: {self.depth}; board: {repr(self.board)}"
     
     def __str__(self):
         return f"Eval_Node:\ndist eval: {self.dist}\ndepth: {self.depth}\n" + str(self.board)
@@ -179,31 +184,29 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=20, ma
     target.clear_stack() # no cheating :)
 
     start_node = Eval_Node(start, target)
-    leaves:list[Eval_Node] = [start_node]
+    leaves:list[Eval_Node] = [start_node] # sorted
     iter = 0
 
     while len(leaves) > 0:
-        # sort leaves based on their eval distancesS
-        leaves.sort(key = lambda x : x.dist_eval() + x.depth*0.1)
         # evaluate closest leaf to target
         current_node = leaves[0]
         # check if target is found or max_depth is reached
         if current_node.dist_eval() == 0:
-            print("TARGET FOUND")
+            print(f"TARGET FOUND\niterations: {iter}")
             return True, current_node.board.move_stack
         if current_node.depth == max_depth:
-            print(f"MAX DEPTH REACHED\ndist: {current_node.dist_eval()}")
+            print(f"MAX DEPTH REACHED\ndist eval: {current_node.dist_eval()}")
             return False, current_node.board.move_stack
         if iter == max_iter:
-            print(f"MAX ITERATIONS REACHED\ndist: {current_node.dist_eval()}")
+            print(f"MAX ITERATIONS REACHED\ndist eval: {current_node.dist_eval()}")
             return False, current_node.board.move_stack
         # generate child nodes
         current_node.gen_children()
-        # add child nodes to leaves
-        for node in current_node.children:
-            leaves.append(node)
         # remove current_node from leaves
         del leaves[0]
+        # add child nodes to leaves
+        for node in current_node.children:
+            _insert_node_sorted(leaves, node)
         # print status
         if print_status:
             print(f"leaves: {len(leaves)}\ncurrent node:\n" + str(current_node))
@@ -212,3 +215,26 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=20, ma
 
     print("NO LEAVES REMAINING")
     return False, []
+
+
+def _insert_node_sorted(lst:list[Eval_Node], node:Eval_Node):
+    '''
+    Used to insert nodes into the sorted leaves list
+    Uses binary search
+    '''
+    node_prec = node.precedence()
+    lower_bound:int = 0
+    upper_bound:int = len(lst)
+    guess:int
+
+    while upper_bound > lower_bound + 1:
+        guess = (lower_bound + upper_bound) // 2
+        if lst[guess].precedence() > node_prec:
+            upper_bound = guess
+        elif lst[guess].precedence() < node_prec:
+            lower_bound = guess
+        else:
+            lst.insert(guess + 1, node)
+            return
+    
+    lst.insert(upper_bound, node)

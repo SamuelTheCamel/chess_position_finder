@@ -243,7 +243,7 @@ def _insert_node_sorted(lst:list[Eval_Node], node:Eval_Node):
         elif lst[guess].precedence() > node_prec:
             lower_bound = guess
         else:
-            lst.insert(guess + 1, node)
+            lst.insert(guess, node)
             return
     
     lst.insert(upper_bound, node)

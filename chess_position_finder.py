@@ -33,9 +33,8 @@ class Eval_Node():
         if self.board == self.target:
             return 0.0
 
-        if self.board.outcome() != None or self.board.can_claim_threefold_repetition():
-            if self.target.outcome() == None and not self.target.can_claim_threefold_repetition():
-                return float("inf")
+        if (self.board.outcome() != None and self.target.outcome() != None) or self.board.can_claim_threefold_repetition():
+            return float("inf")
 
         dist:float = 0.0
 
@@ -66,7 +65,19 @@ class Eval_Node():
             if len(orig_squares) > len(target_squares):
                 dist += 5.0 # too many pieces
             elif len(orig_squares) < len(target_squares):
-                dist += 50.0 # too few pieces (uh oh)
+                # too few pieces -> determine if more of that piece can possibly be created
+                if piece_type in ("q", "r", "b", "n"):
+                    if len(piece_freq["p"]) >= len(target_squares) - len(orig_squares):
+                        dist += 50.0
+                    else:
+                        dist += float("inf")
+                elif piece_type in ("Q", "R", "B", "N"):
+                    if len(piece_freq["P"]) >= len(target_squares) - len(orig_squares):
+                        dist += 50.0
+                    else:
+                        dist += float("inf")
+                elif piece_type.lower() == "p":
+                    dist += float("inf")
             else: # len(orig_squares) == len(target_squares)
                 # calculate similarity between current piece arrangement and target piece arrangement
                 for o_square in orig_squares:
@@ -87,7 +98,7 @@ class Eval_Node():
                             if o_card == t_card:
                                 curr_dist = chess.square_distance(o_square, t_square) * 0.7
                             else:
-                                curr_dist = float("inf")
+                                curr_dist = 100.0
                         elif piece_type.lower() == "n":
                             curr_dist = chess.square_knight_distance(o_square, t_square) * 1.5
                         elif piece_type == "P":
@@ -105,7 +116,7 @@ class Eval_Node():
                             else:
                                 curr_dist = rank_dist * 1.2 + abs(file_dist) * 10.0
                         else:
-                            curr_dist = float("inf")
+                            raise RuntimeError("unrecognized piece in dist_eval()")
                         
                         if curr_dist < min_dist:
                             min_dist = curr_dist
@@ -184,12 +195,12 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=20, ma
     target.clear_stack() # no cheating :)
 
     start_node = Eval_Node(start, target)
-    leaves:list[Eval_Node] = [start_node] # sorted
+    leaves:list[Eval_Node] = [start_node] # sorted descending
     iter = 0
 
     while len(leaves) > 0:
         # evaluate closest leaf to target
-        current_node = leaves[0]
+        current_node = leaves.pop()
         # check if target is found or max_depth is reached
         if current_node.dist_eval() == 0:
             print(f"TARGET FOUND\niterations: {iter}")
@@ -202,8 +213,6 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=20, ma
             return False, current_node.board.move_stack
         # generate child nodes
         current_node.gen_children()
-        # remove current_node from leaves
-        del leaves[0]
         # add child nodes to leaves
         for node in current_node.children:
             _insert_node_sorted(leaves, node)
@@ -219,7 +228,7 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=20, ma
 
 def _insert_node_sorted(lst:list[Eval_Node], node:Eval_Node):
     '''
-    Used to insert nodes into the sorted leaves list
+    Used to insert nodes into the sorted leaves list (descending order)
     Uses binary search
     '''
     node_prec = node.precedence()
@@ -229,9 +238,9 @@ def _insert_node_sorted(lst:list[Eval_Node], node:Eval_Node):
 
     while upper_bound > lower_bound + 1:
         guess = (lower_bound + upper_bound) // 2
-        if lst[guess].precedence() > node_prec:
+        if lst[guess].precedence() < node_prec:
             upper_bound = guess
-        elif lst[guess].precedence() < node_prec:
+        elif lst[guess].precedence() > node_prec:
             lower_bound = guess
         else:
             lst.insert(guess + 1, node)

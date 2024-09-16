@@ -31,7 +31,6 @@ class Eval_Node():
             return self.dist
         
         if self.board == self.target:
-            print("yay")
             return 0.0
 
         dist = 0.0
@@ -84,10 +83,10 @@ class Eval_Node():
         return f"Eval_Node:\ndist eval: {self.dist}\ndepth: {self.depth}\n" + str(self.board)
 
 
-def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=20, print_status=True) -> tuple[bool,list[chess.Move]]:
+def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=20, print_status=False) -> tuple[bool,list[chess.Move]]:
     '''
     Finds the target board from the start board.
-    Set print_status to False to prevent find() from printing status messages.
+    Set print_status to True to see status messages.
     Returns True and the list of moves used to reach the target if successful.
     Returns False and the list of moves to the closest position if target is not reached in max_depth moves.
     Returns False and an empty list if all moves lead to stalemate/checkmate.
@@ -111,12 +110,21 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=20, pr
         current_node = leaves[0]
         # check if target is found or max_depth is reached
         if current_node.board == target:
+            print("TARGET FOUND")
             return True, current_node.board.move_stack
         if current_node.depth == max_depth:
+            print(f"MAX DEPTH REACHED\ndist: {current_node.dist_eval()}")
             return False, current_node.board.move_stack
         # generate child nodes
         current_node.gen_children()
-        # this node is no longer a leaf, so delete it
+        # add child nodes to leaves
+        for node in current_node.children:
+            leaves.append(node)
+        # remove current_node from leaves
         del leaves[0]
+        # print status
+        if print_status:
+            print(f"leaves: {len(leaves)}\ncurrent node:\n" + str(current_node))
 
+    print("NO LEAVES REMAINING")
     return False, []

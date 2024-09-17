@@ -9,18 +9,32 @@ This program uses the chess module and the stockfish module (used to determine m
 import chess
 import stockfish
 
+# CHANGE THIS PATH TO LOCATION OF STOCKFISH EXE ON YOUR COMPUTER
+sfish = stockfish.Stockfish("C:\\Users\\samue\\Documents\\stockfish\\stockfish-windows-x86-64-avx2.exe")
+sfish.set_depth(2) # Low depth for faster computation
+
 class Eval_Node():
 
-    def __init__(self, board:chess.Board, target:chess.Board, depth:int = 0):
+    def __init__(self, board:chess.Board, target:chess.Board, depth:int = 0, prev_badness:float=0.0, prev_sf_eval:int=0, use_stockfish=True):
         '''
         board: the board this node represents
         target: the target position we want to find
+        depth: the depth of this node in the tree
+        prev_badness: the badness of the parent node
+        prev_sf_eval: the stockfish evaluation of the previous position
+        use_stockfish: set to False to not use Stockfish for badness calculation (badness will default to 0)
         '''
         self.board = board
         self.target = target
         self.children:set[Eval_Node] = set()
-        self.dist:float|None = None # indicates that distance hasn't been evaluated yet
+        self.dist:float|None = None # None when distance hasn't been evaluated yet
         self.depth = depth
+
+        self.prev_badness = prev_badness
+        self.prev_sf_eval = prev_sf_eval
+        self.badness:float|None = None # None when badness hasn't been evaluated yet
+        self.sf_eval:int = prev_sf_eval # initialize to prev_sf_eval as failsafe
+        self.use_stockfish = use_stockfish
 
     def dist_eval(self) -> float:
         '''
@@ -131,6 +145,7 @@ class Eval_Node():
                     dist += min_dist
                     target_squares.remove(min_square) # prevent multiple pieces from going to same square
         
+        # account for the position being the same but the turn being wrong
         if dist < 1 and self.board.turn != self.target.turn:
             dist = 1.0
 
@@ -150,7 +165,8 @@ class Eval_Node():
             new_board = self.board.copy()
             new_board.push(move)
             # create new node with new board
-            self.children.add(Eval_Node(new_board, self.target, self.depth + 1))
+            self.children.add(Eval_Node(new_board, self.target, self.depth + 1, 
+                                        self.badness_eval(), self.sf_eval, self.use_stockfish))
         
         #self._update_dist()
     
@@ -170,20 +186,55 @@ class Eval_Node():
         
         self.dist = min_dist + 1.0
     
-    def precedence(self):
+    def precedence(self) -> float:
         '''
         Calculates the precedence of this node. Nodes with the lowest precedence will be evaluated first in minimax.
+        (Can be negative)
         '''
-        return self.dist_eval() # currently useless TODO: add stockfish stuff
+        if self.use_stockfish:
+            return self.dist_eval() + self.badness_eval()*0.25 - self.depth*0.25
+        else:
+            return self.dist_eval()
+
+    def badness_eval(self) -> float:
+        '''
+        Returns the badness of the set of moves leading to this position as determined by Stockfish
+        (Used to determine most likely human play)
+        '''
+
+        if self.badness != None:
+            return self.badness
+        
+        if self.use_stockfish:
+            sfish.set_fen_position(self.board.fen())
+            sf_eval_dict = sfish.get_evaluation()
+            if sf_eval_dict["type"] == "cp":
+                self.sf_eval = sf_eval_dict["value"]
+            else:
+                if sf_eval_dict["value"] > 0:
+                    self.sf_eval = 1000
+                elif sf_eval_dict["value"] < 0:
+                    self.sf_eval = -1000
+                else:
+                    self.sf_eval = 0 # idk if this is possible or not
+            
+            self.badness = self.prev_badness + abs(self.sf_eval - self.prev_sf_eval)*0.01
+
+        else:
+            self.badness = 0.0 # stockfish disabled
+            self.sf_eval = 0
+
+        return self.badness
 
     def __repr__(self):
-        return f"Eval_Node: dist eval: {self.dist}; depth: {self.depth}; board: {repr(self.board)}"
+        return f"Eval_Node: dist eval: {self.dist}; badness: {self.badness}; depth: {self.depth}; board: {repr(self.board)}"
     
     def __str__(self):
-        return f"Eval_Node:\ndist eval: {self.dist}\ndepth: {self.depth}\n" + str(self.board)
+        return f"Eval_Node:\ndist eval: {self.dist}\nbadness: {self.badness}\ndepth: {self.depth}\n" + str(self.board)
 
 
-def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=20, max_iter=500, print_status=False) -> tuple[bool,list[chess.Move]]:
+def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 20, max_iter:int = 50, 
+         print_status:bool = False, use_stockfish:bool = True) -> tuple[bool,list[chess.Move]]:
     '''
     Finds the target board from the start board.
     Set print_status to True to see status messages.
@@ -191,6 +242,13 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=20, ma
     Returns False and the list of moves to the closest position if target is not reached in max_depth moves.
     Returns False and an empty list if all moves lead to stalemate/checkmate.
     Raises a ValueError if the start or target board are invalid.
+
+    target: the board to find
+    start: the board to start from
+    max_depth: the maximum depth this function will search to
+    max_iter: the maximum number of iterations this function can take
+    print_status: set to True to see status messages during calculation
+    use_stockfish: set to False to not use Stockfish during evaluation (makes it way faster)
     '''
     if not(target.is_valid()):
         raise ValueError("invalid target board")
@@ -200,7 +258,7 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth=20, ma
     start.clear_stack()
     target.clear_stack() # no cheating :)
 
-    start_node = Eval_Node(start, target)
+    start_node = Eval_Node(start, target, use_stockfish=use_stockfish)
     leaves:list[Eval_Node] = [start_node] # sorted descending
     iter = 0
 

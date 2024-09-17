@@ -101,20 +101,26 @@ class Eval_Node():
                                 curr_dist = 100.0
                         elif piece_type.lower() == "n":
                             curr_dist = chess.square_knight_distance(o_square, t_square) * 1.5
-                        elif piece_type == "P":
-                            file_dist = chess.square_file(t_square) - chess.square_file(o_square)
-                            rank_dist = chess.square_rank(t_square) - chess.square_rank(o_square)
+                        elif piece_type.lower() == "p":
+                            if piece_type == "P":
+                                file_dist = chess.square_file(t_square) - chess.square_file(o_square)
+                                rank_dist = chess.square_rank(t_square) - chess.square_rank(o_square)
+                            else:
+                                file_dist = chess.square_file(o_square) - chess.square_file(t_square)
+                                rank_dist = chess.square_rank(o_square) - chess.square_rank(t_square)
+                            # determine feasibility of pawn moves
                             if rank_dist < 0:
                                 curr_dist = float("inf")
-                            else:
-                                curr_dist = rank_dist * 1.2 + abs(file_dist) * 10.0
-                        elif piece_type == "p":
-                            file_dist = chess.square_file(o_square) - chess.square_file(t_square)
-                            rank_dist = chess.square_rank(o_square) - chess.square_rank(t_square)
-                            if rank_dist < 0:
-                                curr_dist = float("inf")
-                            else:
-                                curr_dist = rank_dist * 1.2 + abs(file_dist) * 10.0
+                            elif rank_dist == 0:
+                                if file_dist == 0:
+                                    curr_dist = 0.0
+                                else:
+                                    curr_dist = float("inf")
+                            else: # rank_dist > 0
+                                if abs(file_dist) > rank_dist:
+                                    curr_dist = float("inf")
+                                else:
+                                    curr_dist = rank_dist * 1.0 + abs(file_dist)**2 * 10.0
                         else:
                             raise RuntimeError("unrecognized piece in dist_eval()")
                         
@@ -168,7 +174,7 @@ class Eval_Node():
         '''
         Calculates the precedence of this node. Nodes with the lowest precedence will be evaluated first in minimax.
         '''
-        return self.dist_eval() + self.depth * 0.1
+        return self.dist_eval() # currently useless TODO: add stockfish stuff
 
     def __repr__(self):
         return f"Eval_Node: dist eval: {self.dist}; depth: {self.depth}; board: {repr(self.board)}"

@@ -77,7 +77,8 @@ class Eval_Node():
             target_squares = piece_freq_target[piece_type]
 
             if len(orig_squares) > len(target_squares):
-                dist += 5.0 # too many pieces
+                # too many pieces
+                dist += 10.0 * (len(orig_squares) - len(target_squares))
             elif len(orig_squares) < len(target_squares):
                 # too few pieces -> determine if more of that piece can possibly be created
                 if piece_type in ("q", "r", "b", "n"):
@@ -110,7 +111,7 @@ class Eval_Node():
                             o_card = (chess.square_file(o_square) + chess.square_rank(o_square)) % 2
                             t_card = (chess.square_file(t_square) + chess.square_rank(t_square)) % 2
                             if o_card == t_card:
-                                curr_dist = chess.square_distance(o_square, t_square) * 0.7
+                                curr_dist = chess.square_distance(o_square, t_square) * 0.5
                             else:
                                 curr_dist = 100.0
                         elif piece_type.lower() == "n":

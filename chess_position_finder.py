@@ -93,6 +93,8 @@ class Eval_Node():
                         dist += float("inf")
                 elif piece_type.lower() == "p":
                     dist += float("inf")
+                else:
+                    raise RuntimeError("invalid piece type has too many pieces in dist_eval()")
             else: # len(orig_squares) == len(target_squares)
                 # calculate similarity between current piece arrangement and target piece arrangement
                 for o_square in orig_squares:

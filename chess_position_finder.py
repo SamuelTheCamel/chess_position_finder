@@ -15,11 +15,12 @@ sfish.set_depth(2) # Low depth for faster computation
 
 class Eval_Node():
 
-    def __init__(self, board:chess.Board, target:chess.Board, depth:int = 0, prev_badness:float=0.0, prev_sf_eval:int=0, use_stockfish=True):
+    def __init__(self, board:chess.Board, target:chess.Board, depth:int = 0, max_depth:int=1000, prev_badness:float=0.0, prev_sf_eval:int=0, use_stockfish=True):
         '''
         board: the board this node represents
         target: the target position we want to find
         depth: the depth of this node in the tree
+        max_depth: the depth at which this node will not generate any child nodes
         prev_badness: the badness of the parent node
         prev_sf_eval: the stockfish evaluation of the previous position
         use_stockfish: set to False to not use Stockfish for badness calculation (badness will default to 0)
@@ -29,6 +30,7 @@ class Eval_Node():
         self.children:set[Eval_Node] = set()
         self.dist:float|None = None # None when distance hasn't been evaluated yet
         self.depth = depth
+        self.max_depth = max_depth
 
         self.prev_badness = prev_badness
         self.prev_sf_eval = prev_sf_eval
@@ -161,14 +163,17 @@ class Eval_Node():
     def gen_children(self):
         '''
         Generates all child nodes of this node (positions after next move)
+        Does nothing if depth = max_depth
         '''
+        if self.depth == self.max_depth:
+            return
         move_list = self.board.legal_moves
         for move in move_list:
             # create new board with given move
             new_board = self.board.copy()
             new_board.push(move)
             # create new node with new board
-            self.children.add(Eval_Node(new_board, self.target, self.depth + 1, 
+            self.children.add(Eval_Node(new_board, self.target, self.depth + 1, self.max_depth,
                                         self.badness_eval(), self.sf_eval, self.use_stockfish))
         
         #self._update_dist()
@@ -236,14 +241,13 @@ class Eval_Node():
         return f"Eval_Node:\ndist eval: {self.dist}\nbadness: {self.badness}\ndepth: {self.depth}\n" + str(self.board)
 
 
-def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 20, max_iter:int = 50, 
+def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 30, max_iter:int = 100, 
          print_status:bool = False, use_stockfish:bool = True) -> tuple[bool,list[chess.Move]]:
     '''
     Finds the target board from the start board.
     Set print_status to True to see status messages.
     Returns True and the list of moves used to reach the target if successful.
-    Returns False and the list of moves to the closest position if target is not reached in max_depth moves.
-    Returns False and an empty list if all moves lead to stalemate/checkmate.
+    Returns False and an empty list if unsuccessful.
     Raises a ValueError if the start or target board are invalid.
 
     target: the board to find
@@ -261,7 +265,7 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
     start.clear_stack()
     target.clear_stack() # no cheating :)
 
-    start_node = Eval_Node(start, target, use_stockfish=use_stockfish)
+    start_node = Eval_Node(start, target, max_depth=max_depth, use_stockfish=use_stockfish)
     leaves:list[Eval_Node] = [start_node] # sorted descending
     iter = 0
 
@@ -272,12 +276,11 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
         if current_node.dist_eval() == 0:
             print(f"TARGET FOUND\niterations: {iter}")
             return True, current_node.board.move_stack
-        if current_node.depth == max_depth:
-            print(f"MAX DEPTH REACHED\ndist eval: {current_node.dist_eval()}")
-            return False, current_node.board.move_stack
         if iter == max_iter:
+            if print_status:
+                print(current_node)
             print(f"MAX ITERATIONS REACHED\ndist eval: {current_node.dist_eval()}")
-            return False, current_node.board.move_stack
+            return False, []
         # generate child nodes
         current_node.gen_children()
         # add child nodes to leaves
@@ -289,6 +292,8 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
         
         iter += 1
 
+    if print_status:
+        print(current_node)
     print("NO LEAVES REMAINING")
     return False, []
 

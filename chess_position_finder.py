@@ -156,6 +156,7 @@ class Eval_Node():
                     dist += min_dist
                     target_squares.remove(min_square) # prevent multiple pieces from going to same square
         
+        '''
         # near zero distance edge cases
         if dist < 1:
             # account for the position being the same but the turn being wrong
@@ -167,6 +168,10 @@ class Eval_Node():
                     dist = 1.0
                 if self.board.has_queenside_castling_rights(color) and not self.target.has_queenside_castling_rights(color):
                     dist = 1.0
+        '''
+
+        if dist < 1 and not board_equals(self.board, self.target):
+            dist = 1.0
 
         if dist < 0:
             raise RuntimeError("negative distance value detected")
@@ -287,7 +292,7 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
         # evaluate closest leaf to target
         current_node = leaves.pop()
         # check if target is found or max_depth is reached
-        if current_node.dist_eval() == 0:
+        if board_equals(current_node.board, target):
             if print_status:
                 print("Final Node:\n" + str(current_node))
             print(f"TARGET FOUND\niterations: {iter}")
@@ -335,3 +340,19 @@ def _insert_node_sorted(lst:list[Eval_Node], node:Eval_Node):
             return
     
     lst.insert(upper_bound, node)
+
+
+def reduce_fen(fen:str) -> str:
+    '''
+    Removes the turn number and 50-move-rule information from the FEN string.
+    '''
+    fen_list = fen.split(" ")
+    new = " ".join(fen_list[:4])
+    return new
+
+
+def board_equals(board1:chess.Board, board2:chess.Board):
+    '''
+    Returns True if board1 is the same as board2 except for turn number and 50-move-rule tracking.
+    '''
+    return reduce_fen(board1.fen()) == reduce_fen(board2.fen())

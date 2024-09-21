@@ -15,12 +15,14 @@ sfish.set_depth(2) # Low depth for faster computation
 
 class Eval_Node():
 
+    board_cache:set[tuple[str,str]] = set()
+
     def __init__(self, board:chess.Board, target:chess.Board, depth:int = 0, max_depth:int=1000, prev_badness:float=0.0, prev_sf_eval:int=0, use_stockfish=True):
         '''
         board: the board this node represents
         target: the target position we want to find
         depth: the depth of this node in the tree
-        max_depth: the depth at which this node will not generate any child nodes
+        max_depth: the depth at which this node will not generate any child nodes (for better results, set this to be 2x the difference in turn number)
         prev_badness: the badness of the parent node
         prev_sf_eval: the stockfish evaluation of the previous position
         use_stockfish: set to False to not use Stockfish for badness calculation (badness will default to 0)
@@ -37,6 +39,11 @@ class Eval_Node():
         self.badness:float|None = None # None when badness hasn't been evaluated yet
         self.sf_eval:int = prev_sf_eval # initialize to prev_sf_eval as failsafe
         self.use_stockfish = use_stockfish
+
+        # add this node to board cache
+        reduced_fen_board = reduce_fen(self.board.fen())
+        reduced_fen_target = reduce_fen(self.board.fen())
+        self.board_cache.add((reduced_fen_board, reduced_fen_target))
 
     def dist_eval(self) -> float:
         '''
@@ -191,6 +198,11 @@ class Eval_Node():
             # create new board with given move
             new_board = self.board.copy()
             new_board.push(move)
+            # check if board has already been visited
+            reduced_fen_new_board = reduce_fen(new_board.fen())
+            reduced_fen_target = reduce_fen(self.board.fen())
+            if (reduced_fen_new_board, reduced_fen_target) in self.board_cache:
+                continue
             # create new node with new board
             self.children.add(Eval_Node(new_board, self.target, self.depth + 1, self.max_depth,
                                         self.badness_eval(), self.sf_eval, self.use_stockfish))
@@ -219,7 +231,7 @@ class Eval_Node():
         (Can be negative)
         '''
         if self.use_stockfish:
-            return self.dist_eval() + self.badness_eval()*0.25 - self.depth*0.25
+            return self.dist_eval() + self.badness_eval()*1.0 - self.depth*0.25
         else:
             return self.dist_eval()
 
@@ -259,8 +271,15 @@ class Eval_Node():
     def __str__(self):
         return f"Eval_Node:\ndist eval: {self.dist}\nbadness: {self.badness}\ndepth: {self.depth}\n" + str(self.board)
 
+    @staticmethod
+    def clear_cache():
+        '''
+        Clears the board cache. This should be called at the start/end of any search.
+        '''
+        Eval_Node.board_cache = set()
 
-def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 20, max_iter:int = 100, 
+
+def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 30, max_iter:int = 100, 
          print_status:bool = False, use_stockfish:bool = True) -> tuple[bool,list[chess.Move]]:
     '''
     Finds the target board from the start board.
@@ -283,6 +302,8 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
     
     start.clear_stack()
     target.clear_stack() # no cheating :)
+
+    Eval_Node.clear_cache() # clear cached info from previous search
 
     start_node = Eval_Node(start, target, max_depth=max_depth, use_stockfish=use_stockfish)
     leaves:list[Eval_Node] = [start_node] # sorted descending

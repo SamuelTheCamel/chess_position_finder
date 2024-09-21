@@ -51,6 +51,12 @@ class Eval_Node():
 
         if (self.board.outcome() != None and self.target.outcome() != None) or self.board.can_claim_threefold_repetition():
             return float("inf")
+        
+        for color in (chess.WHITE, chess.BLACK):
+            if self.target.has_kingside_castling_rights(color) and not self.board.has_kingside_castling_rights(color):
+                return float("inf")
+            if self.target.has_queenside_castling_rights(color) and not self.board.has_queenside_castling_rights(color):
+                return float("inf")
 
         dist:float = 0.0
 
@@ -150,9 +156,17 @@ class Eval_Node():
                     dist += min_dist
                     target_squares.remove(min_square) # prevent multiple pieces from going to same square
         
-        # account for the position being the same but the turn being wrong
-        if dist < 1 and self.board.turn != self.target.turn:
-            dist = 1.0
+        # near zero distance edge cases
+        if dist < 1:
+            # account for the position being the same but the turn being wrong
+            if self.board.turn != self.target.turn:
+                dist = 1.0
+            # account for different castling rights
+            for color in (chess.WHITE, chess.BLACK):
+                if self.board.has_kingside_castling_rights(color) and not self.target.has_kingside_castling_rights(color):
+                    dist = 1.0
+                if self.board.has_queenside_castling_rights(color) and not self.target.has_queenside_castling_rights(color):
+                    dist = 1.0
 
         if dist < 0:
             raise RuntimeError("negative distance value detected")
@@ -241,7 +255,7 @@ class Eval_Node():
         return f"Eval_Node:\ndist eval: {self.dist}\nbadness: {self.badness}\ndepth: {self.depth}\n" + str(self.board)
 
 
-def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 30, max_iter:int = 100, 
+def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 20, max_iter:int = 100, 
          print_status:bool = False, use_stockfish:bool = True) -> tuple[bool,list[chess.Move]]:
     '''
     Finds the target board from the start board.
@@ -274,11 +288,13 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
         current_node = leaves.pop()
         # check if target is found or max_depth is reached
         if current_node.dist_eval() == 0:
+            if print_status:
+                print("Final Node:\n" + str(current_node))
             print(f"TARGET FOUND\niterations: {iter}")
             return True, current_node.board.move_stack
         if iter == max_iter:
             if print_status:
-                print(current_node)
+                print("Final Node:\n" + str(current_node))
             print(f"MAX ITERATIONS REACHED\ndist eval: {current_node.dist_eval()}")
             return False, []
         # generate child nodes
@@ -293,7 +309,7 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
         iter += 1
 
     if print_status:
-        print(current_node)
+        print("Final Node:\n" + str(current_node))
     print("NO LEAVES REMAINING")
     return False, []
 

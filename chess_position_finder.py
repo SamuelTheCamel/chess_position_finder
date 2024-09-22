@@ -27,7 +27,7 @@ class Eval_Node():
 
     board_cache:set[tuple[str,str]] = set()
 
-    def __init__(self, board:chess.Board, target:chess.Board, depth:int = 0, max_depth:int=1000, prev_badness:float=0.0, prev_sf_eval:int=0, use_stockfish=True):
+    def __init__(self, board:chess.Board, target:chess.Board, depth:int = 0, max_depth:int=1000, prev_badness:float=0.0, prev_sf_eval:int=0, use_stockfish=True, skill:float=1.0, depth_reward:float=0.25):
         '''
         board: the board this node represents
         target: the target position we want to find
@@ -36,6 +36,8 @@ class Eval_Node():
         prev_badness: the badness of the parent node
         prev_sf_eval: the stockfish evaluation of the previous position
         use_stockfish: set to False to not use Stockfish for badness calculation (badness will default to 0)
+        skill: determines how much influence Stockfish will have
+        depth_reward: determines how much the search algorithm will prioritize deeper nodes (set to negative value to make it prioritize closer nodes)
         '''
         self.board = board
         self.target = target
@@ -49,6 +51,9 @@ class Eval_Node():
         self.badness:float|None = None # None when badness hasn't been evaluated yet
         self.sf_eval:int = prev_sf_eval # initialize to prev_sf_eval as failsafe
         self.use_stockfish = use_stockfish
+
+        self.skill = skill
+        self.depth_reward = depth_reward
 
         # add this node to board cache
         reduced_fen_board = reduce_fen(self.board.fen())
@@ -208,7 +213,9 @@ class Eval_Node():
                         return float("inf") # impossible to reach with diagonal moves
                     
                     # check number of captures available
-                    num_captures = self.piece_count(self.board, not(current_type.color)) - 1
+                    current_num_pieces = self.piece_count(self.board, not(current_type.color))
+                    target_num_pieces = self.piece_count(self.target, not(current_type.color))
+                    num_captures = current_num_pieces - target_num_pieces
                     if abs(file_dist) > num_captures:
                         return float("inf") # not enough captures available
 
@@ -289,7 +296,8 @@ class Eval_Node():
                 continue
             # create new node with new board
             self.children.add(Eval_Node(new_board, self.target, self.depth + 1, self.max_depth,
-                                        self.badness_eval(), self.sf_eval, self.use_stockfish))
+                                        self.badness_eval(), self.sf_eval, self.use_stockfish, 
+                                        self.skill, self.depth_reward))
         
         #self._update_dist()
     
@@ -315,7 +323,7 @@ class Eval_Node():
         (Can be negative)
         '''
         if self.use_stockfish:
-            return self.dist_eval() + self.badness_eval()*1.0 - self.depth*0.25
+            return self.dist_eval() + self.badness_eval()*self.skill - self.depth*self.depth_reward
         else:
             return self.dist_eval()
 
@@ -364,7 +372,8 @@ class Eval_Node():
 
 
 def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 30, max_iter:int = 100, 
-         print_status:bool = False, use_stockfish:bool = True) -> tuple[bool,list[chess.Move]]:
+         print_status:bool = False, use_stockfish:bool = True, 
+         skill:float=1.0, depth_reward:float=0.25) -> tuple[bool,list[chess.Move]]:
     '''
     Finds the target board from the start board.
     Set print_status to True to see status messages.
@@ -378,6 +387,8 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
     max_iter: the maximum number of iterations this function can take
     print_status: set to True to see status messages during calculation
     use_stockfish: set to False to not use Stockfish during evaluation (makes it way faster)
+    skill: determines how much influence Stockfish will have
+    depth_reward: determines how much the search algorithm will prioritize deeper nodes (set to negative value to make it prioritize closer nodes)
     '''
     if not(target.is_valid()):
         raise ValueError("invalid target board")
@@ -389,7 +400,8 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
 
     Eval_Node.clear_cache() # clear cached info from previous search
 
-    start_node = Eval_Node(start, target, max_depth=max_depth, use_stockfish=use_stockfish)
+    start_node = Eval_Node(start, target, max_depth=max_depth, use_stockfish=use_stockfish, 
+                           skill=skill, depth_reward=depth_reward)
     leaves:list[Eval_Node] = [start_node] # sorted descending
     iter = 0
 

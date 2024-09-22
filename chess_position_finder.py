@@ -27,7 +27,9 @@ class Eval_Node():
 
     board_cache:set[tuple[str,str]] = set()
 
-    def __init__(self, board:chess.Board, target:chess.Board, depth:int = 0, max_depth:int=1000, prev_badness:float=0.0, prev_sf_eval:int=0, use_stockfish=True, skill:float=1.0, depth_reward:float=0.25):
+    def __init__(self, board:chess.Board, target:chess.Board, depth:int = 0, max_depth:int=1000, 
+                 prev_badness:float=0.0, prev_sf_eval:int=0, use_stockfish=True, 
+                 skill:float=1.0, depth_reward:float=0.25):
         '''
         board: the board this node represents
         target: the target position we want to find

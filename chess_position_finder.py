@@ -162,20 +162,6 @@ class Eval_Node():
                     
                     dist += min_dist
                     target_squares.remove(min_square) # prevent multiple pieces from going to same square
-        
-        '''
-        # near zero distance edge cases
-        if dist < 1:
-            # account for the position being the same but the turn being wrong
-            if self.board.turn != self.target.turn:
-                dist = 1.0
-            # account for different castling rights
-            for color in (chess.WHITE, chess.BLACK):
-                if self.board.has_kingside_castling_rights(color) and not self.target.has_kingside_castling_rights(color):
-                    dist = 1.0
-                if self.board.has_queenside_castling_rights(color) and not self.target.has_queenside_castling_rights(color):
-                    dist = 1.0
-        '''
 
         if dist < 1 and not board_equals(self.board, self.target):
             dist = 1.0
@@ -185,6 +171,82 @@ class Eval_Node():
 
         self.dist = dist
         return dist
+    
+
+    def piece_dist(self, current_type:chess.Piece, current_square:chess.Square, 
+                   target_type:chess.Piece, target_square:chess.Square) -> float:
+        '''
+        Returns the estimated distance between a piece's current square and a target square.
+        Please also speicify the current piece's type and the target piece type (may be different in the case of promotion).
+        '''
+        curr_str = str(current_type)
+        target_str = str(target_type)
+
+        if curr_str.lower() == "p":
+
+            # pawn -> pawn
+            if curr_str == target_str:
+                # get file and rank distances (reversed based on color)
+                if curr_str == "P":
+                    file_dist = chess.square_file(target_square) - chess.square_file(current_square)
+                    rank_dist = chess.square_rank(target_square) - chess.square_rank(current_square)
+                else:
+                    file_dist = chess.square_file(current_square) - chess.square_file(target_square)
+                    rank_dist = chess.square_rank(current_square) - chess.square_rank(target_square)
+                
+                if rank_dist < 0: # pawn too far
+                    return float("inf") 
+                elif rank_dist == 0: # pawn at correct rank
+                    if file_dist == 0:
+                        return 0.0 # same position
+                    else:
+                        return float("inf") # wrong file
+                else: # rank_dist > 0
+                    if abs(file_dist) > rank_dist:
+                        return float("inf") # impossible to reach with diagonal moves
+                    else:
+                        return rank_dist * 1.0 + abs(file_dist)**2 * 10.0
+            
+            # pawn -> other piece (white)
+            if curr_str == "P" and target_str in ("N","B","R","Q"):
+                prom_dist = 8 - chess.square_file(current_square)
+                return 10.0 + prom_dist
+            
+            # pawn -> other piece (black)
+            if curr_str == "p" and target_str in ("n","b","r","q"):
+                prom_dist = chess.square_file(current_square) - 1
+                return 10.0 + prom_dist
+            
+            # pawn -> king (or error case)
+            return float("inf")
+        
+        # check if there is piece mismatch
+        if curr_str != target_str:
+            return float("inf")
+
+        if curr_str.lower() == "n":
+            return chess.square_knight_distance(current_square, target_square) * 1.5
+        
+        if curr_str.lower() == "b":
+            # check square colors
+            c_card = (chess.square_file(current_square) + chess.square_rank(target_square)) % 2
+            t_card = (chess.square_file(current_square) + chess.square_rank(target_square)) % 2
+            if c_card == t_card:
+                return chess.square_distance(current_square, target_square) * 0.5
+            else:
+                return float("inf") # opposite colored squares
+        
+        if curr_str.lower() == "r":
+            return chess.square_manhattan_distance(current_square, target_square) * 0.5
+        
+        if curr_str.lower() == "q":
+            return chess.square_distance(current_square, target_square) * 0.3
+        
+        if curr_str.lower() == "k":
+            return chess.square_distance(current_square, target_square) * 1.5
+
+        raise ValueError("invalid piece type in piece_dist()")
+
     
     def gen_children(self):
         '''

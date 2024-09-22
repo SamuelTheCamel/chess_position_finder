@@ -14,6 +14,16 @@ sfish = stockfish.Stockfish("C:\\Users\\samue\\Documents\\stockfish\\stockfish-w
 sfish.set_depth(2) # Low depth for faster computation
 
 class Eval_Node():
+    '''
+    A node in the position finder search tree. Main contents include:
+    self.board: the chess position this node represents
+    self.target: the target position
+    self.children: the child nodes of this node (the next moves)
+    self.dist_eval(): the estimated distance from this node's position to the target
+    self.badness_eval(): the badness of all the moves up to this point according to Stockfish
+
+    NOTE: Make sure to clear the board_cache before each new search to ensure correct behavior
+    '''
 
     board_cache:set[tuple[str,str]] = set()
 
@@ -45,6 +55,7 @@ class Eval_Node():
         reduced_fen_target = reduce_fen(self.board.fen())
         self.board_cache.add((reduced_fen_board, reduced_fen_target))
 
+
     def dist_eval(self) -> float:
         '''
         Returns the estimated distance from this node to the target
@@ -60,9 +71,15 @@ class Eval_Node():
             return float("inf")
         
         for color in (chess.WHITE, chess.BLACK):
+
+            # check castling rights
             if self.target.has_kingside_castling_rights(color) and not self.board.has_kingside_castling_rights(color):
                 return float("inf")
             if self.target.has_queenside_castling_rights(color) and not self.board.has_queenside_castling_rights(color):
+                return float("inf")
+        
+            # check piece counts
+            if self.piece_count(self.board, color) < self.piece_count(self.target, color):
                 return float("inf")
 
         dist:float = 0.0
@@ -86,88 +103,72 @@ class Eval_Node():
                 if piece != target_piece:
                     dist += 0.1
         
-        # calcaulte similarity of certain piece types
-        for piece_type in piece_freq:
-            orig_squares = piece_freq[piece_type]
-            target_squares = piece_freq_target[piece_type]
+        # sort pawn targets to prevent incorrect targeting issues
+        piece_freq_target["p"].sort(reverse=True)
+        piece_freq_target["P"].sort()
 
-            if len(orig_squares) > len(target_squares):
-                # too many pieces
-                dist += 10.0 * (len(orig_squares) - len(target_squares))
-            elif len(orig_squares) < len(target_squares):
-                # too few pieces -> determine if more of that piece can possibly be created
-                if piece_type in ("q", "r", "b", "n"):
-                    if len(piece_freq["p"]) >= len(target_squares) - len(orig_squares):
-                        dist += 50.0
-                    else:
-                        dist += float("inf")
-                elif piece_type in ("Q", "R", "B", "N"):
-                    if len(piece_freq["P"]) >= len(target_squares) - len(orig_squares):
-                        dist += 50.0
-                    else:
-                        dist += float("inf")
-                elif piece_type.lower() == "p":
-                    dist += float("inf")
-                else:
-                    raise RuntimeError("invalid piece type has too many pieces in dist_eval()")
-            else: # len(orig_squares) == len(target_squares)
-                # calculate similarity between current piece arrangement and target piece arrangement
+        '''test_list = []'''
+        
+        # calculate how close pieces are to their target squares
+        # by looking at each target square and adding the distance of the closest orig square
+        # and then removing that square to prevent two pieces moving towards the same target
+        for piece_type in piece_freq_target:
+            target_squares:list[chess.Square] = piece_freq_target[piece_type]
+            
+            same_type_squares:list[chess.Square] = piece_freq[piece_type]
+            prom_squares:list[chess.Square]
+            if piece_type in ("n","b","r","q"):
+                prom_squares =  piece_freq["p"]
+            elif piece_type in ("N","B","R","Q"):
+                prom_squares =  piece_freq["P"]
+            else:
+                prom_squares = []
+            
+            orig_squares:list[chess.Square] = same_type_squares + prom_squares
+
+            for t_square in target_squares:
+
+                if len(orig_squares) == 0:
+                    return float("inf") # no remaining pieces that can reach this target
+                
+                min_dist:float = float("inf")
+                min_square:chess.Square = orig_squares[0]
+                
                 for o_square in orig_squares:
-                    min_dist = float("inf")
-                    min_square = target_squares[0]
-
-                    for t_square in target_squares:
-                        curr_dist:float
-                        if piece_type.lower() == "k":
-                            curr_dist = chess.square_distance(o_square, t_square) * 1.5
-                        elif piece_type.lower() == "q":
-                            curr_dist = chess.square_distance(o_square, t_square) * 0.3
-                        elif piece_type.lower() == "r":
-                            curr_dist = chess.square_manhattan_distance(o_square, t_square) * 0.5
-                        elif piece_type.lower() == "b":
-                            o_card = (chess.square_file(o_square) + chess.square_rank(o_square)) % 2
-                            t_card = (chess.square_file(t_square) + chess.square_rank(t_square)) % 2
-                            if o_card == t_card:
-                                curr_dist = chess.square_distance(o_square, t_square) * 0.5
-                            else:
-                                curr_dist = 100.0
-                        elif piece_type.lower() == "n":
-                            curr_dist = chess.square_knight_distance(o_square, t_square) * 1.5
-                        elif piece_type.lower() == "p":
-                            if piece_type == "P":
-                                file_dist = chess.square_file(t_square) - chess.square_file(o_square)
-                                rank_dist = chess.square_rank(t_square) - chess.square_rank(o_square)
-                            else:
-                                file_dist = chess.square_file(o_square) - chess.square_file(t_square)
-                                rank_dist = chess.square_rank(o_square) - chess.square_rank(t_square)
-                            # determine feasibility of pawn moves
-                            if rank_dist < 0:
-                                curr_dist = float("inf")
-                            elif rank_dist == 0:
-                                if file_dist == 0:
-                                    curr_dist = 0.0
-                                else:
-                                    curr_dist = float("inf")
-                            else: # rank_dist > 0
-                                if abs(file_dist) > rank_dist:
-                                    curr_dist = float("inf")
-                                else:
-                                    curr_dist = rank_dist * 1.0 + abs(file_dist)**2 * 10.0
-                        else:
-                            raise RuntimeError("unrecognized piece in dist_eval()")
-                        
-                        if curr_dist < min_dist:
-                            min_dist = curr_dist
-                            min_square = t_square
+                    target_type_obj = self.target.piece_at(t_square)
+                    orig_type_obj = self.board.piece_at(o_square)
                     
-                    dist += min_dist
-                    target_squares.remove(min_square) # prevent multiple pieces from going to same square
+                    if target_type_obj == None or orig_type_obj == None: # this is to make type checking happy
+                        raise RuntimeError("o_square or t_square has no piece in dist_eval()")
+                    
+                    curr_dist = self.piece_dist(orig_type_obj, o_square, target_type_obj, t_square)
 
+                    if curr_dist < min_dist:
+                        min_dist = curr_dist
+                        min_square = o_square
+
+                dist += min_dist
+
+                # the orig piece for this target piece has been found, so remove it
+                orig_squares.remove(min_square) 
+                if min_square in same_type_squares:
+                    same_type_squares.remove(min_square)
+                if min_square in prom_squares:
+                    prom_squares.remove(min_square)
+        
+        # check how many orig pieces are left over
+        for piece_type in piece_freq:
+            dist += 10.0 * len(piece_freq[piece_type])
+
+        # account for edge cases
         if dist < 1 and not board_equals(self.board, self.target):
             dist = 1.0
 
         if dist < 0:
             raise RuntimeError("negative distance value detected")
+        
+        '''if dist > 60:
+            print(test_list)'''
 
         self.dist = dist
         return dist
@@ -202,20 +203,26 @@ class Eval_Node():
                     else:
                         return float("inf") # wrong file
                 else: # rank_dist > 0
+
                     if abs(file_dist) > rank_dist:
                         return float("inf") # impossible to reach with diagonal moves
-                    else:
-                        return rank_dist * 1.0 + abs(file_dist)**2 * 10.0
+                    
+                    # check number of captures available
+                    num_captures = self.piece_count(self.board, not(current_type.color)) - 1
+                    if abs(file_dist) > num_captures:
+                        return float("inf") # not enough captures available
+
+                    return rank_dist * 1.0 + abs(file_dist)**2 * 10.0
             
             # pawn -> other piece (white)
             if curr_str == "P" and target_str in ("N","B","R","Q"):
-                prom_dist = 8 - chess.square_file(current_square)
-                return 10.0 + prom_dist
+                prom_dist = 7 - chess.square_rank(current_square)
+                return 15.0 + prom_dist * 10.0
             
             # pawn -> other piece (black)
             if curr_str == "p" and target_str in ("n","b","r","q"):
-                prom_dist = chess.square_file(current_square) - 1
-                return 10.0 + prom_dist
+                prom_dist = chess.square_rank(current_square)
+                return 15.0 + prom_dist * 10.0
             
             # pawn -> king (or error case)
             return float("inf")
@@ -229,8 +236,8 @@ class Eval_Node():
         
         if curr_str.lower() == "b":
             # check square colors
-            c_card = (chess.square_file(current_square) + chess.square_rank(target_square)) % 2
-            t_card = (chess.square_file(current_square) + chess.square_rank(target_square)) % 2
+            c_card = (chess.square_file(current_square) + chess.square_rank(current_square)) % 2
+            t_card = (chess.square_file(target_square) + chess.square_rank(target_square)) % 2
             if c_card == t_card:
                 return chess.square_distance(current_square, target_square) * 0.5
             else:
@@ -246,6 +253,21 @@ class Eval_Node():
             return chess.square_distance(current_square, target_square) * 1.5
 
         raise ValueError("invalid piece type in piece_dist()")
+    
+
+    def piece_count(self, board:chess.Board, color:chess.Color) -> int:
+        '''
+        Counts the total number of pieces of a certain color in a given board.
+        Includes the king.
+        '''
+        count = 0
+        for file in range(8):
+            for rank in range(8):
+                square = chess.square(file, rank)
+                piece = board.piece_at(square)
+                if piece != None and piece.color == color:
+                    count += 1
+        return count
 
     
     def gen_children(self):

@@ -30,8 +30,8 @@ class Eval_Node():
     '''
     A node in the position finder search tree. Main contents include:
     self.board: the chess position this node represents
-    self.target: the target position
-    self.dist_eval(): the estimated distance from this node's position to the target
+    self.target: the target chess position
+    self.dist_eval(): the estimated distance (number of moves) from this node's board to the target
     self.badness_eval(): the badness of all the moves up to this point according to Stockfish
     self.children: the child nodes of this node (the next moves)
     self.gen_children(): generates the child nodes from this node
@@ -416,7 +416,7 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
     max_iter: the maximum number of iterations this function can take
     print_status: set to True to see status messages during calculation
     use_stockfish: set to False to not use Stockfish during evaluation (makes it way faster)
-    skill: determines how much influence Stockfish will have
+    skill: determines how well both sides should play according to Stockfish
     depth_reward: determines how much the search algorithm will prioritize deeper nodes (set to negative value to make it prioritize closer nodes)
     '''
     if not(target.is_valid()):

@@ -85,7 +85,7 @@ class Eval_Node():
         if self.dist != None:
             return self.dist
         
-        if self.board == self.target:
+        if board_equals(self.board, self.target):
             return 0.0
 
         if (self.board.outcome() != None and self.target.outcome() != None) or self.board.can_claim_threefold_repetition():
@@ -127,8 +127,6 @@ class Eval_Node():
         # sort pawn targets to prevent incorrect targeting issues
         piece_freq_target["p"].sort(reverse=True)
         piece_freq_target["P"].sort()
-
-        '''test_list = []'''
         
         # calculate how close pieces are to their target squares
         # by looking at each target square and adding the distance of the closest orig square
@@ -193,15 +191,12 @@ class Eval_Node():
                 else:
                     dist += 5.0
 
-        # account for edge cases
-        if dist < 1 and not board_equals(self.board, self.target):
-            dist = 1.0
-
         if dist < 0:
             raise RuntimeError("negative distance value detected")
-        
-        '''if dist > 60:
-            print(test_list)'''
+
+        # account for slight mismatches (board equivalence was already checked)
+        if dist < 1:
+            dist = 1.0
 
         self.dist = dist
         return dist

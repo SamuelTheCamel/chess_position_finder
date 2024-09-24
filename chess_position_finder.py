@@ -441,12 +441,12 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
         if board_equals(current_node.board, target):
             if print_status:
                 print("Final Node:\n" + str(current_node))
-            print(f"TARGET FOUND\niterations: {iter}")
+                print(f"TARGET FOUND\niterations: {iter}")
             return True, current_node.board.move_stack
         if iter == max_iter:
             if print_status:
                 print("Final Node:\n" + str(current_node))
-            print(f"MAX ITERATIONS REACHED\ndist eval: {current_node.dist_eval()}")
+                print(f"MAX ITERATIONS REACHED\ndist eval: {current_node.dist_eval()}")
             return False, []
         # generate child nodes
         current_node.gen_children()
@@ -461,7 +461,7 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
 
     if print_status:
         print("Final Node:\n" + str(current_node))
-    print("NO LEAVES REMAINING")
+        print("NO MOVES REMAINING")
     return False, []
 
 

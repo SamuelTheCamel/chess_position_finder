@@ -4,13 +4,26 @@ by Samuel Voltz
 
 This program can find a set of moves from a given starting position to a given target position.
 This program uses the chess module and the stockfish module (used to determine most likely player moves).
+
+IMPORTANT: Before running, make sure to:
+1. Install Stockfish on your computer
+2. Update stockfish_path.txt to the path where stockfish.exe is located
+
+Create a board using the python chess module.
+Use the function find(target, start) to find a target board from a starting board.
 '''
 
 import chess
 import stockfish
+import os
 
-# CHANGE THIS PATH TO LOCATION OF STOCKFISH EXE ON YOUR COMPUTER
-sfish = stockfish.Stockfish("C:\\Users\\samue\\Documents\\stockfish\\stockfish-windows-x86-64-avx2.exe")
+# open stockfish_path.txt from the directory this python file is located in
+file_dir = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+with open(os.path.join(file_dir, "stockfish_path.txt")) as file:
+    sfish_path = file.read()
+
+# setup stockfish
+sfish = stockfish.Stockfish(sfish_path)
 sfish.set_depth(2) # Low depth for faster computation
 
 class Eval_Node():
@@ -18,9 +31,10 @@ class Eval_Node():
     A node in the position finder search tree. Main contents include:
     self.board: the chess position this node represents
     self.target: the target position
-    self.children: the child nodes of this node (the next moves)
     self.dist_eval(): the estimated distance from this node's position to the target
     self.badness_eval(): the badness of all the moves up to this point according to Stockfish
+    self.children: the child nodes of this node (the next moves)
+    self.gen_children(): generates the child nodes from this node
 
     NOTE: Make sure to clear the board_cache before each new search to ensure correct behavior
     '''
@@ -163,9 +177,21 @@ class Eval_Node():
                 if min_square in prom_squares:
                     prom_squares.remove(min_square)
         
-        # check how many orig pieces are left over
+        # check for orig pieces that are left over (pieces that need to be captured)
         for piece_type in piece_freq:
-            dist += 10.0 * len(piece_freq[piece_type])
+            orig_squares = piece_freq[piece_type]
+
+            attack_color:chess.Color
+            if piece_type == piece_type.lower():
+                attack_color = chess.WHITE # piece is black
+            else:
+                attack_color = chess.BLACK # piece is white
+
+            for o_square in orig_squares:
+                if self.board.is_attacked_by(attack_color, o_square):
+                    dist += 3.0 # lower distance if being attacked
+                else:
+                    dist += 5.0
 
         # account for edge cases
         if dist < 1 and not board_equals(self.board, self.target):
@@ -319,15 +345,16 @@ class Eval_Node():
         
         self.dist = min_dist + 1.0
     
-    def precedence(self) -> float:
+    def priority(self) -> float:
         '''
-        Calculates the precedence of this node. Nodes with the lowest precedence will be evaluated first in minimax.
+        Calculates the priority of this node. Lower values indicate higher priority.
+        Nodes with the lowest value will be evaluated first in minimax.
         (Can be negative)
         '''
         if self.use_stockfish:
             return self.dist_eval() + self.badness_eval()*self.skill - self.depth*self.depth_reward
         else:
-            return self.dist_eval()
+            return self.dist_eval() + 0.25 - self.depth*self.depth_reward
 
     def badness_eval(self) -> float:
         '''
@@ -443,16 +470,16 @@ def _insert_node_sorted(lst:list[Eval_Node], node:Eval_Node):
     Used to insert nodes into the sorted leaves list (descending order)
     Uses binary search
     '''
-    node_prec = node.precedence()
+    node_priority = node.priority()
     lower_bound:int = 0
     upper_bound:int = len(lst)
     guess:int
 
     while upper_bound > lower_bound + 1:
         guess = (lower_bound + upper_bound) // 2
-        if lst[guess].precedence() < node_prec:
+        if lst[guess].priority() < node_priority:
             upper_bound = guess
-        elif lst[guess].precedence() > node_prec:
+        elif lst[guess].priority() > node_priority:
             lower_bound = guess
         else:
             lst.insert(guess, node)

@@ -27,7 +27,7 @@ with open(file_loc) as file:
 # setup stockfish
 try:
     sfish = stockfish.Stockfish(sfish_path)
-except FileNotFoundError:
+except OSError:
     # ask user for stockfish location
     sfish_path = input("Please enter the location of the Stockfish executable file (q to quit): ")
     

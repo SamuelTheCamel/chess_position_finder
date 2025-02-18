@@ -16,14 +16,32 @@ Use the function find(target, start) to find a target board from a starting boar
 import chess
 import stockfish
 import os
+import sys
 
 # open stockfish_path.txt from the directory this python file is located in
 file_dir = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
-with open(os.path.join(file_dir, "stockfish_path.txt")) as file:
+file_loc = os.path.join(file_dir, "stockfish_path.txt")
+with open(file_loc) as file:
     sfish_path = file.read()
 
 # setup stockfish
-sfish = stockfish.Stockfish(sfish_path)
+try:
+    sfish = stockfish.Stockfish(sfish_path)
+except FileNotFoundError:
+    # ask user for stockfish location
+    sfish_path = input("Please enter the location of the Stockfish executable file (q to quit): ")
+    
+    if sfish_path == "q":
+        sys.exit()
+
+    # write to stockfish_path.txt
+    with open(file_loc, "w") as file:
+        file.write(sfish_path)
+
+    input("Program will now quit. Please run it again. (Press Enter to quit, an error message may appear.)")
+
+    sys.exit()
+
 sfish.set_depth(2) # Low depth for faster computation
 
 class Eval_Node():
@@ -464,6 +482,7 @@ def _insert_node_sorted(lst:list[Eval_Node], node:Eval_Node):
     '''
     Used to insert nodes into the sorted leaves list (descending order)
     Uses binary search
+    TODO: use binary heap instead
     '''
     node_priority = node.priority()
     lower_bound:int = 0

@@ -8,7 +8,10 @@ This program uses the chess module and the stockfish module (used to determine f
 
 **IMPORTANT**: Before running, make sure to:
 1. [Install Stockfish](https://stockfishchess.org/) on your computer.
-2. Update stockfish_path.txt to the path where Stockfish's executable file is located (otherwise, the program will prompt you for a location, but this feature is a bit buggy)
+2. Install the "chess" and "stockfish" modules.
+3. Copy the file location of the Stockfish executable file. You will need to enter this file path when starting the program for the first time.
+
+**If you enter the wrong file path**: In this case, please edit the file called stockfish_path.txt to be the correct file path.
 
 Create chess boards using the python chess module. Their documentation can be found [here](https://python-chess.readthedocs.io/en/latest/index.html).
 

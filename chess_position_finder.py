@@ -17,6 +17,7 @@ import chess
 import stockfish
 import os
 import sys
+import heapq
 
 # open stockfish_path.txt from the directory this python file is located in
 file_dir = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
@@ -403,6 +404,14 @@ class Eval_Node():
     def __str__(self):
         return f"Eval_Node:\ndist eval: {self.dist}\nbadness: {self.badness}\ndepth: {self.depth}\n" + str(self.board)
 
+    # Less than and greater than dunders (used for binary heap)
+
+    def __lt__(self, other: 'Eval_Node') -> bool:
+        return self.priority() < other.priority()
+
+    def __gt__(self, other: 'Eval_Node') -> bool:
+        return self.priority() > other.priority()
+
     @staticmethod
     def clear_cache():
         '''
@@ -442,12 +451,12 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
 
     start_node = Eval_Node(start, target, max_depth=max_depth, use_stockfish=use_stockfish, 
                            skill=skill, depth_reward=depth_reward)
-    leaves:list[Eval_Node] = [start_node] # sorted descending
+    leaves:list[Eval_Node] = [start_node] # must maintain min-heap structure using heapq
     iter = 0
 
     while len(leaves) > 0:
         # evaluate closest leaf to target
-        current_node = leaves.pop()
+        current_node = heapq.heappop(leaves)
         # check if target is found or max_depth is reached
         if board_equals(current_node.board, target):
             if print_status:
@@ -463,7 +472,7 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
         current_node.gen_children()
         # add child nodes to leaves
         for node in current_node.children:
-            _insert_node_sorted(leaves, node)
+            heapq.heappush(leaves, node)
         # print status
         if print_status:
             print(f"leaves: {len(leaves)}\ncurrent node:\n" + str(current_node))
@@ -474,30 +483,6 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
         print("Final Node:\n" + str(current_node))
         print("NO MOVES REMAINING")
     return False, []
-
-
-def _insert_node_sorted(lst:list[Eval_Node], node:Eval_Node):
-    '''
-    Used to insert nodes into the sorted leaves list (descending order)
-    Uses binary search
-    TODO: use binary heap instead
-    '''
-    node_priority = node.priority()
-    lower_bound:int = 0
-    upper_bound:int = len(lst)
-    guess:int
-
-    while upper_bound > lower_bound + 1:
-        guess = (lower_bound + upper_bound) // 2
-        if lst[guess].priority() < node_priority:
-            upper_bound = guess
-        elif lst[guess].priority() > node_priority:
-            lower_bound = guess
-        else:
-            lst.insert(guess, node)
-            return
-    
-    lst.insert(upper_bound, node)
 
 
 def reduce_fen(fen:str) -> str:

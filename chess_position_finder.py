@@ -345,8 +345,7 @@ class Eval_Node():
             if board_cache_key in self.board_cache:
                 # add existing node to children and update depth if necessary
                 child_node = self.board_cache[board_cache_key]
-                if self.depth + 1 < child_node.depth:
-                    child_node.update_prev_node(self, move)
+                child_node.update_prev_node(self, move)
             else:
                 # create new node with new board
                 child_node = Eval_Node(new_board, self.target, self.depth + 1, self.max_depth,
@@ -416,15 +415,22 @@ class Eval_Node():
 
     def update_prev_node(self, new_prev_node:typing.Self, new_prev_move:chess.Move):
         '''
-        Updates the previous node and depth of this node. 
-        Use this when a new shorter path to this node is found.
+        Updates the previous node and depth of this node if the resulting depth is smaller than
+        the current depth.
+        Recursively calls this function for child nodes if needed.
 
         new_prev_node: the new previous (parent) node to this node
         new_prev_move: the move from new_prev_node to this node
         '''
+        if new_prev_move.depth + 1 >= self.depth:
+            return
+
         self.prev_node = new_prev_node
         self.prev_moves = new_prev_node.prev_moves + (new_prev_move,)
         self.depth = new_prev_node.depth + 1
+
+        for child_node in self.children:
+            child_node.update_prev_node(self, child_node.prev_moves[-1])
 
 
     def __repr__(self):

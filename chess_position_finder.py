@@ -18,6 +18,7 @@ import stockfish
 import os
 import sys
 import heapq
+import typing
 
 # open stockfish_path.txt from the directory this python file is located in
 file_dir = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
@@ -56,11 +57,12 @@ class Eval_Node():
     NOTE: Make sure to clear the board_cache before each new search to ensure correct behavior
     '''
 
-    board_cache:set[tuple[str,str]] = set()
+    board_cache:dict[tuple[str,str], typing.Self] = dict()
 
     def __init__(self, board:chess.Board, target:chess.Board, depth:int = 0, max_depth:int=1000, 
-                 prev_badness:float=0.0, prev_sf_eval:int=0, use_stockfish=True, 
-                 skill:float=1.0, depth_reward:float=0.25):
+                 prev_badness:float=0.0, prev_sf_eval:int=0, use_stockfish:bool=True, 
+                 skill:float=1.0, depth_reward:float=0.25, prev_node:typing.Self|None=None, 
+                 prev_moves:tuple[chess.Move]=tuple()):
         '''
         board: the board this node represents
         target: the target position we want to find
@@ -71,6 +73,8 @@ class Eval_Node():
         use_stockfish: set to False to not use Stockfish for badness calculation (badness will default to 0)
         skill: determines how much influence Stockfish will have
         depth_reward: determines how much the search algorithm will prioritize deeper nodes (set to negative value to make it prioritize closer nodes)
+        prev_node: the previous (parent) node in the tree
+        prev_moves: the previous moves that led up to this position from the starting position
         '''
         self.board = board
         self.target = target
@@ -88,10 +92,13 @@ class Eval_Node():
         self.skill = skill
         self.depth_reward = depth_reward
 
+        self.prev_node = prev_node
+        self.prev_moves = prev_moves
+
         # add this node to board cache
         reduced_fen_board = reduce_fen(self.board.fen())
         reduced_fen_target = reduce_fen(self.board.fen())
-        self.board_cache.add((reduced_fen_board, reduced_fen_target))
+        self.board_cache[(reduced_fen_board, reduced_fen_target)] = self
 
 
     def dist_eval(self) -> float:
@@ -329,15 +336,24 @@ class Eval_Node():
             # create new board with given move
             new_board = self.board.copy()
             new_board.push(move)
+
             # check if board has already been visited
             reduced_fen_new_board = reduce_fen(new_board.fen())
             reduced_fen_target = reduce_fen(self.board.fen())
-            if (reduced_fen_new_board, reduced_fen_target) in self.board_cache:
-                continue
-            # create new node with new board
-            self.children.add(Eval_Node(new_board, self.target, self.depth + 1, self.max_depth,
-                                        self.badness_eval(), self.sf_eval, self.use_stockfish, 
-                                        self.skill, self.depth_reward))
+            board_cache_key = (reduced_fen_new_board, reduced_fen_target)
+
+            if board_cache_key in self.board_cache:
+                # add existing node to children and update depth if necessary
+                child_node = self.board_cache[board_cache_key]
+                if self.depth + 1 < child_node.depth:
+                    child_node.update_prev_node(self, move)
+            else:
+                # create new node with new board
+                child_node = Eval_Node(new_board, self.target, self.depth + 1, self.max_depth,
+                    self.badness_eval(), self.sf_eval, self.use_stockfish, self.skill, 
+                    self.depth_reward, self, self.prev_moves + (move,))
+
+            self.children.add(child_node)
         
         #self._update_dist()
     
@@ -398,6 +414,19 @@ class Eval_Node():
 
         return self.badness
 
+    def update_prev_node(self, new_prev_node:typing.Self, new_prev_move:chess.Move):
+        '''
+        Updates the previous node and depth of this node. 
+        Use this when a new shorter path to this node is found.
+
+        new_prev_node: the new previous (parent) node to this node
+        new_prev_move: the move from new_prev_node to this node
+        '''
+        self.prev_node = new_prev_node
+        self.prev_moves = new_prev_node.prev_moves + (new_prev_move,)
+        self.depth = new_prev_node.depth + 1
+
+
     def __repr__(self):
         return f"Eval_Node: dist eval: {self.dist}; badness: {self.badness}; depth: {self.depth}; board: {repr(self.board)}"
     
@@ -417,7 +446,7 @@ class Eval_Node():
         '''
         Clears the board cache. This should be called at the start/end of any search.
         '''
-        Eval_Node.board_cache = set()
+        Eval_Node.board_cache = dict()
 
 
 def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 30, max_iter:int = 100, 
@@ -462,7 +491,7 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
             if print_status:
                 print("Final Node:\n" + str(current_node))
                 print(f"TARGET FOUND\niterations: {iter}")
-            return True, current_node.board.move_stack
+            return True, list(current_node.prev_moves)
         if iter == max_iter:
             if print_status:
                 print("Final Node:\n" + str(current_node))

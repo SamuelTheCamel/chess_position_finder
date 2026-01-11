@@ -18,7 +18,6 @@ import stockfish
 import os
 import sys
 import heapq
-import typing
 
 # open stockfish_path.txt from the directory this python file is located in
 file_dir = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
@@ -57,11 +56,11 @@ class Eval_Node():
     NOTE: Make sure to clear the board_cache before each new search to ensure correct behavior
     '''
 
-    board_cache:dict[tuple[str,str], typing.Self] = dict()
+    board_cache:dict[tuple[str,str], 'Eval_Node'] = dict()
 
     def __init__(self, board:chess.Board, target:chess.Board, depth:int = 0, max_depth:int=1000, 
                  prev_badness:float=0.0, prev_sf_eval:int=0, use_stockfish:bool=True, 
-                 skill:float=1.0, depth_reward:float=0.25, prev_node:typing.Self|None=None, 
+                 skill:float=1.0, depth_reward:float=0.25, prev_node:'Eval_Node|None'=None, 
                  prev_moves:tuple[chess.Move]=tuple()):
         '''
         board: the board this node represents
@@ -79,6 +78,7 @@ class Eval_Node():
         self.board = board
         self.target = target
         self.children:set[Eval_Node] = set()
+        self.new_children:set[Eval_Node] = set()
         self.dist:float|None = None # None when distance hasn't been evaluated yet
         self.depth = depth
         self.max_depth = max_depth
@@ -97,7 +97,7 @@ class Eval_Node():
 
         # add this node to board cache
         reduced_fen_board = reduce_fen(self.board.fen())
-        reduced_fen_target = reduce_fen(self.board.fen())
+        reduced_fen_target = reduce_fen(self.target.fen())
         self.board_cache[(reduced_fen_board, reduced_fen_target)] = self
 
 
@@ -339,7 +339,7 @@ class Eval_Node():
 
             # check if board has already been visited
             reduced_fen_new_board = reduce_fen(new_board.fen())
-            reduced_fen_target = reduce_fen(self.board.fen())
+            reduced_fen_target = reduce_fen(self.target.fen())
             board_cache_key = (reduced_fen_new_board, reduced_fen_target)
 
             if board_cache_key in self.board_cache:
@@ -351,6 +351,7 @@ class Eval_Node():
                 child_node = Eval_Node(new_board, self.target, self.depth + 1, self.max_depth,
                     self.badness_eval(), self.sf_eval, self.use_stockfish, self.skill, 
                     self.depth_reward, self, self.prev_moves + (move,))
+                self.new_children.add(child_node)
 
             self.children.add(child_node)
         
@@ -413,7 +414,7 @@ class Eval_Node():
 
         return self.badness
 
-    def update_prev_node(self, new_prev_node:typing.Self, new_prev_move:chess.Move):
+    def update_prev_node(self, new_prev_node:'Eval_Node', new_prev_move:chess.Move):
         '''
         Updates the previous node and depth of this node if the resulting depth is smaller than
         the current depth.
@@ -422,8 +423,11 @@ class Eval_Node():
         new_prev_node: the new previous (parent) node to this node
         new_prev_move: the move from new_prev_node to this node
         '''
-        if new_prev_move.depth + 1 >= self.depth:
+
+        if new_prev_node.depth + 1 >= self.depth:
             return
+
+        print("TEST")
 
         self.prev_node = new_prev_node
         self.prev_moves = new_prev_node.prev_moves + (new_prev_move,)
@@ -457,7 +461,7 @@ class Eval_Node():
 
 def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 30, max_iter:int = 100, 
          print_status:bool = False, use_stockfish:bool = True, 
-         skill:float=1.0, depth_reward:float=0.25) -> tuple[bool,list[chess.Move]]:
+         skill:float=1.0, depth_reward:float=0.25, find_shorter_results:bool=False) -> tuple[bool,list[chess.Move]]:
     '''
     Finds the target board from the start board.
     Set print_status to True to see status messages.
@@ -470,9 +474,14 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
     max_depth: the maximum depth this function will search to
     max_iter: the maximum number of iterations this function can take
     print_status: set to True to see status messages during calculation
-    use_stockfish: set to False to not use Stockfish during evaluation (makes it way faster)
+    use_stockfish: set to False to not use Stockfish during evaluation 
+        (use this if computation is too slow)
     skill: determines how well both sides should play according to Stockfish
-    depth_reward: determines how much the search algorithm will prioritize deeper nodes (set to negative value to make it prioritize closer nodes)
+    depth_reward: determines how much the search algorithm will prioritize deeper nodes 
+        (set to negative value to make it prioritize closer nodes, set to 0 to disable)
+    find_shorter_results: set to True to allow extra search time after the target is found to find
+        alternate shorter paths to the target position
+        (if True, it is recommended to set depth_reward to a smaller or negative value)
     '''
     if not(target.is_valid()):
         raise ValueError("invalid target board")
@@ -489,24 +498,47 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
     leaves:list[Eval_Node] = [start_node] # must maintain min-heap structure using heapq
     iter = 0
 
+    target_node = None # only used if find_shorter_results is True
+
     while len(leaves) > 0:
         # evaluate closest leaf to target
         current_node = heapq.heappop(leaves)
         # check if target is found or max_depth is reached
         if board_equals(current_node.board, target):
-            if print_status:
-                print("Final Node:\n" + str(current_node))
-                print(f"TARGET FOUND\niterations: {iter}")
-            return True, list(current_node.prev_moves)
+            if find_shorter_results:
+                # target found, set target_node and continue
+                if print_status:
+                    print("TARGET FOUND, CONTINUING")
+                    print(f"leaves: {len(leaves)}\ncurrent node:\n" + str(current_node))
+
+                target_node = current_node
+
+                # continue to next iteration without adding children to leaves
+                iter += 1
+                continue
+            else:
+                # target found, return moves
+                if print_status:
+                    print("Final Node:\n" + str(current_node))
+                    print(f"TARGET FOUND\niterations: {iter}")
+                return True, list(current_node.prev_moves)
         if iter == max_iter:
-            if print_status:
-                print("Final Node:\n" + str(current_node))
-                print(f"MAX ITERATIONS REACHED\ndist eval: {current_node.dist_eval()}")
-            return False, []
+            if target_node != None:
+                # return previously found target node
+                if print_status:
+                    print("Current Node:\n" + str(current_node))
+                    print(f"MAX ITERATIONS REACHED WITH TARGET FOUND")
+                    print(f"Target depth: {target_node.depth}")
+                return True, list(target_node.prev_moves)
+            else:
+                if print_status:
+                    print("Final Node:\n" + str(current_node))
+                    print(f"MAX ITERATIONS REACHED\ndist eval: {current_node.dist_eval()}")
+                return False, []
         # generate child nodes
         current_node.gen_children()
         # add child nodes to leaves
-        for node in current_node.children:
+        for node in current_node.new_children:
             heapq.heappush(leaves, node)
         # print status
         if print_status:
@@ -514,10 +546,18 @@ def find(target:chess.Board, start:chess.Board = chess.Board(), max_depth:int = 
         
         iter += 1
 
-    if print_status:
-        print("Final Node:\n" + str(current_node))
-        print("NO MOVES REMAINING")
-    return False, []
+    if target_node != None:
+        # return previously found target node
+        if print_status:
+            print("Current Node:\n" + str(current_node))
+            print("NO MOVES REMAINING WITH TARGET FOUND")
+            print(f"Target depth: {target_node.depth}")
+        return True, list(target_node.prev_moves)
+    else:
+        if print_status:
+            print("Final Node:\n" + str(current_node))
+            print("NO MOVES REMAINING")
+        return False, []
 
 
 def reduce_fen(fen:str) -> str:

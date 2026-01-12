@@ -58,6 +58,9 @@ class Eval_Node():
 
     board_cache:dict[tuple[str,str], 'Eval_Node'] = dict()
 
+    # print debug info
+    print_prev_node_updates = False
+
     def __init__(self, board:chess.Board, target:chess.Board, depth:int = 0, max_depth:int=1000, 
                  prev_badness:float=0.0, prev_sf_eval:int=0, use_stockfish:bool=True, 
                  skill:float=1.0, depth_reward:float=0.25, prev_node:'Eval_Node|None'=None, 
@@ -78,7 +81,7 @@ class Eval_Node():
         self.board = board
         self.target = target
         self.children:set[Eval_Node] = set()
-        self.new_children:set[Eval_Node] = set()
+        self.new_children:set[Eval_Node] = set() # children that didn't previously exist prior to running gen_children on this node
         self.dist:float|None = None # None when distance hasn't been evaluated yet
         self.depth = depth
         self.max_depth = max_depth
@@ -94,6 +97,8 @@ class Eval_Node():
 
         self.prev_node = prev_node
         self.prev_moves = prev_moves
+        
+        self.cached_priority:float|None = None # None when priority() hasn't been called yet
 
         # add this node to board cache
         reduced_fen_board = reduce_fen(self.board.fen())
@@ -378,11 +383,18 @@ class Eval_Node():
         Calculates the priority of this node. Lower values indicate higher priority.
         Nodes with the lowest value will be evaluated first in minimax.
         (Can be negative)
+        (Must return the same value every time it is called for this node)
         '''
+        if self.cached_priority != None:
+            return self.cached_priority
+
         if self.use_stockfish:
-            return self.dist_eval() + self.badness_eval()*self.skill - self.depth*self.depth_reward
+            self.cached_priority = self.dist_eval() + self.badness_eval()*self.skill - self.depth*self.depth_reward
         else:
-            return self.dist_eval() + 0.25 - self.depth*self.depth_reward
+            self.cached_priority = self.dist_eval() + 0.25 - self.depth*self.depth_reward
+
+        return self.cached_priority
+    
 
     def badness_eval(self) -> float:
         '''
@@ -392,7 +404,14 @@ class Eval_Node():
 
         if self.badness != None:
             return self.badness
+        else:
+            return self.update_badness_eval()
         
+    
+    def update_badness_eval(self) -> float:
+        '''
+        Updates the badness of this node regardless of if it has been previously calculated
+        '''
         if self.use_stockfish:
             sfish.set_fen_position(self.board.fen())
             sf_eval_dict = sfish.get_evaluation()
@@ -414,6 +433,7 @@ class Eval_Node():
 
         return self.badness
 
+
     def update_prev_node(self, new_prev_node:'Eval_Node', new_prev_move:chess.Move):
         '''
         Updates the previous node and depth of this node if the resulting depth is smaller than
@@ -422,16 +442,33 @@ class Eval_Node():
 
         new_prev_node: the new previous (parent) node to this node
         new_prev_move: the move from new_prev_node to this node
+
+        TODO: remove debug print statements once they are not useful anymore
         '''
 
         if new_prev_node.depth + 1 >= self.depth:
             return
-
-        print("TEST")
+        
+        if self.print_prev_node_updates:
+            print(f"Node updated! Previous depth: {self.depth} New depth: {new_prev_node.depth + 1}")
+            print(f"FEN: {self.board.fen()}")
 
         self.prev_node = new_prev_node
         self.prev_moves = new_prev_node.prev_moves + (new_prev_move,)
+
         self.depth = new_prev_node.depth + 1
+
+        # update badness
+        if self.use_stockfish == True:
+            if self.print_prev_node_updates:
+                print(f"Old badness: {self.badness}")
+
+            self.prev_badness = new_prev_node.badness_eval()
+            self.prev_sf_eval = new_prev_node.sf_eval
+            self.update_badness_eval()
+
+            if self.print_prev_node_updates:
+                print(f"New badness: {self.badness}")
 
         for child_node in self.children:
             child_node.update_prev_node(self, child_node.prev_moves[-1])
